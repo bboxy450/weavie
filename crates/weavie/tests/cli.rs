@@ -81,7 +81,7 @@ fn missing_files_and_invalid_commands_fail_clearly() {
         .unwrap();
     assert_eq!(output.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&output.stderr).contains("reading absent.lock"));
-    let output = command().arg("open").output().unwrap();
+    let output = command().arg("not-a-command").output().unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("unrecognized subcommand"));
 }

@@ -10,6 +10,9 @@ use anyhow::{Context, Result, anyhow, bail, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+pub mod backend;
+pub mod session;
+
 /// A normalized, deterministic view of a version-7 Nix flake lock graph.
 #[derive(Debug, Clone, Serialize)]
 pub struct Graph {

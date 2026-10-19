@@ -4,26 +4,62 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use weavie::backend::Target;
+use weavie::session::{Session, valid_alias};
 use weavie::{Graph, Node};
 
 #[derive(Parser)]
 #[command(
     version,
-    about = "Explore Nix input graphs without checking out repositories"
+    about = "Build Rust graph-repo workspaces from Nix inputs and Git worktrees"
 )]
 struct Cli {
     /// flake.lock or saved Nix metadata JSON; use - for stdin
-    #[arg(long, global = true, default_value = "flake.lock", value_name = "FILE")]
-    file: PathBuf,
+    #[arg(long, global = true, value_name = "FILE", conflicts_with = "session")]
+    file: Option<PathBuf>,
     /// Emit deterministic machine-readable JSON
     #[arg(long, global = true)]
     json: bool,
+    /// Opened session directory (otherwise discovered from the current directory)
+    #[arg(long, global = true, value_name = "DIRECTORY")]
+    session: Option<PathBuf>,
     #[command(subcommand)]
     command: Command,
 }
 
 #[derive(Subcommand)]
 enum Command {
+    /// Open the sources selected by a Nix graphRepo target
+    Open {
+        #[arg(default_value = ".#default")]
+        target: String,
+        #[arg(long, default_value = "default")]
+        name: String,
+        /// Repository aliases to edit; the root repository is the default
+        #[arg(long, value_delimiter = ',')]
+        edit: Vec<String>,
+        #[arg(long)]
+        directory: Option<PathBuf>,
+    },
+    /// Promote a selected read-only repository to an isolated Git worktree
+    Edit { repository: String },
+    /// Show source modes, revisions, paths, and working-tree changes
+    Status,
+    /// Build the Nix target with this session's exact source overrides
+    Build {
+        #[arg(last = true)]
+        arguments: Vec<String>,
+    },
+    /// Run Cargo with selected repository sources, inside the target's Nix dev shell
+    Cargo {
+        /// Use the installed Cargo toolchain instead of nix develop
+        #[arg(long)]
+        native: bool,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        arguments: Vec<String>,
+    },
+    /// Print the Nix integration helper (redirect to weavie.nix in your composition)
+    NixLib,
     /// Show the declared source-input graph (not a target's build closure)
     Graph {
         /// Select the input closure below this root-relative input path
@@ -48,16 +84,118 @@ fn source_label(node: &Node) -> String {
 }
 
 fn run(cli: Cli) -> Result<()> {
-    let mut contents = String::new();
-    if cli.file.as_os_str() == "-" {
-        io::stdin()
-            .read_to_string(&mut contents)
-            .context("reading graph from stdin")?;
-    } else {
-        contents = std::fs::read_to_string(&cli.file)
-            .with_context(|| format!("reading {}", cli.file.display()))?;
+    match &cli.command {
+        Command::Open {
+            target,
+            name,
+            edit,
+            directory,
+        } => {
+            valid_alias(name)?;
+            let target = Target::resolve(target)?;
+            let metadata = target.metadata(&[])?;
+            let graph = Graph::from_json(&metadata.to_string())?;
+            let descriptor = target.descriptor(&[])?;
+            let directory = directory
+                .clone()
+                .unwrap_or_else(|| target.root.join(".weavie/sessions").join(name));
+            let session = Session::create(
+                target,
+                &directory,
+                descriptor,
+                &graph,
+                metadata
+                    .get("locked")
+                    .and_then(serde_json::Value::as_object)
+                    .cloned(),
+                edit,
+            )?;
+            if cli.json {
+                println!("{}", serde_json::to_string_pretty(&session)?);
+            } else {
+                println!(
+                    "Opened {}\nSources: {}",
+                    session.directory.display(),
+                    session.directory.join("src").display()
+                );
+            }
+            return Ok(());
+        }
+        Command::Edit { repository } => {
+            let mut session = Session::discover(cli.session.as_deref())?;
+            session.edit(repository)?;
+            println!(
+                "Editing {}",
+                session.repositories[repository].source_path.display()
+            );
+            return Ok(());
+        }
+        Command::Status => {
+            let session = Session::discover(cli.session.as_deref())?;
+            let status = session.status()?;
+            if cli.json {
+                println!("{}", serde_json::to_string_pretty(&status)?);
+            } else {
+                if !session.ready {
+                    println!("Session creation is incomplete");
+                }
+                for (alias, repo) in status {
+                    println!(
+                        "{alias}: {} {}\n  {}",
+                        if repo.editable { "edit" } else { "read" },
+                        repo.revision.as_deref().unwrap_or("source snapshot"),
+                        repo.path.display()
+                    );
+                    if let Some(changes) = repo.changes {
+                        print!("{changes}");
+                    }
+                }
+            }
+            return Ok(());
+        }
+        Command::Build { arguments } => {
+            let mut arguments = arguments.clone();
+            if cli.json {
+                arguments.push("--json".into());
+            }
+            return Session::discover(cli.session.as_deref())?.build(&arguments);
+        }
+        Command::Cargo { arguments, native } => {
+            let arguments = if arguments.is_empty() {
+                vec!["build".into()]
+            } else {
+                arguments.clone()
+            };
+            return Session::discover(cli.session.as_deref())?.cargo(&arguments, *native);
+        }
+        Command::NixLib => {
+            io::stdout()
+                .lock()
+                .write_all(include_bytes!("../nix/lib.nix"))?;
+            return Ok(());
+        }
+        _ => {}
     }
-    let graph = Graph::from_json(&contents)?;
+    let mut contents = String::new();
+    let session = if cli.session.is_some() || cli.file.is_some() {
+        cli.session
+    } else {
+        Session::current_directory()?
+    };
+    let graph = if let Some(session) = session {
+        Session::load(&session)?.graph()?
+    } else {
+        let file = cli.file.unwrap_or_else(|| PathBuf::from("flake.lock"));
+        if file.as_os_str() == "-" {
+            io::stdin()
+                .read_to_string(&mut contents)
+                .context("reading graph from stdin")?;
+        } else {
+            contents = std::fs::read_to_string(&file)
+                .with_context(|| format!("reading {}", file.display()))?;
+        }
+        Graph::from_json(&contents)?
+    };
     let mut out = io::BufWriter::new(io::stdout().lock());
     match cli.command {
         Command::Graph { from } => {
@@ -107,6 +245,7 @@ fn run(cli: Cli) -> Result<()> {
                 }
             }
         }
+        _ => unreachable!("runtime commands returned before offline inspection"),
     }
     out.flush().context("writing output")
 }

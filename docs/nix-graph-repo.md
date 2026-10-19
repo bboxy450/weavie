@@ -1,8 +1,10 @@
 # A graph repo with Nix, Git worktrees, and symlinks
 
 Research date: 2026-10-19. Primary reference: Nix 2.34.9 documentation. This
-document separates upstream mechanisms, proposed weavie behavior, and executed
-checks. The Rust crate currently implements offline input-graph inspection only.
+document records the initial 0.1.0 research. The source/worktree workflow is now
+implemented in 0.2.0 and tested with live Nix; see the [workspace guide](workspaces.md)
+for current behavior and executed checks. Future-tense descriptions below record
+the original design, rather than the current implementation boundary.
 
 ## Shape
 

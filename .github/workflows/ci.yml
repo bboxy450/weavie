@@ -14,10 +14,23 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: cachix/install-nix-action@v31.11.2
+        with:
+          extra_nix_config: |
+            sandbox = true
+      - run: nix build .#weavie --no-link -L
+      - name: Prove Cargo and Nix use the same repository sources
+        run: |
+          export WEAVIE_NIXPKGS="path:$(nix eval --raw --impure --expr '(builtins.getFlake (toString ./.)).inputs.nixpkgs.outPath')"
+          nix develop --command cargo test --locked --test nix_workflow -- --ignored --nocapture

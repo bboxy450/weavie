@@ -1,19 +1,26 @@
 [package]
 name = "weavie"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.85"
-description = "Explore Nix flake dependency graphs for selective multi-repository workspaces"
+description = "Build Rust graph-repo workspaces from Nix inputs and isolated Git worktrees"
 license = "MIT"
 repository = "https://github.com/bboxy450/weavie"
 homepage = "https://github.com/bboxy450/weavie"
 readme = "README.md"
 keywords = ["nix", "git", "worktree", "graph", "workspace"]
 categories = ["command-line-utilities", "development-tools"]
-include = ["src/**", "tests/**", "README.md", "LICENSE", "Cargo.toml"]
+include = ["src/**", "nix/**", "tests/**", "README.md", "LICENSE", "Cargo.toml"]
 
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.6", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+fs2 = "0.4"
+sha2 = "0.10"
+toml = "0.9"
+url = "2.5"
+
+[dev-dependencies]
+tempfile = "3"

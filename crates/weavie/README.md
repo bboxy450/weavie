@@ -1,40 +1,60 @@
 # weavie
 
-An offline Nix input-graph inspector, and the foundation for selective
-multi-repository workspaces built from Nix inputs, Git worktrees, and symlinks.
+Build Rust graph-repo workspaces from Nix inputs, isolated Git worktrees, and
+symlinks. Only the selected target's repositories appear in the workspace.
 
 ```sh
 cargo install weavie --locked
 
-# Inside a composition with an existing flake.lock:
-weavie graph
-weavie graph --from app --json
-weavie why protocol --from app
-weavie why app/transport
-weavie --file /path/to/flake.lock graph
-
-# Accept saved Nix metadata or flake.lock JSON on stdin:
-nix flake metadata --json --no-update-lock-file github:owner/composition \
-  | weavie --file - graph --json
+# In a composition configured with the Nix helper:
+weavie open .#app --name fix --edit app,transport
+cd .weavie/sessions/fix
+weavie cargo test --offline --locked
+weavie build
+weavie edit protocol
+weavie cargo run --offline --locked
+weavie build --json
+weavie status
 ```
 
-Input selectors use slash-separated input names relative to the lock root;
-`.` selects the root. `why` explains a shortest declared input path from the
-chosen starting input. Shared aliases retain their original `follows` paths.
-Identical repositories at different lock nodes remain separate instances.
+`cargo` runs in the target's Nix development shell with the selected local source
+patches. `cargo --native` uses an installed toolchain. `build` applies those same
+source selections to the Nix package. Read-only source snapshots have registered
+GC roots; editable sources have session branches sharing bare Git object caches.
 
-Version 0.1.0 supports lock format 7 and handles circular input graphs. It
-rejects dangling references, alias cycles that never resolve, and unsupported
-lock versions. JSON has `schema_version: 1`, sorted node/input keys, resolved
-edges, original fetcher attributes, and `lock_root` for the original `follows`
-namespace. A selected graph's `root` can differ from `lock_root`.
+The included helper builds with `rustPlatform.buildRustPackage`, assembles source
+trees, and supports crates.io, Git, renamed, transitive, and sibling path
+dependencies, plus repositories containing multiple workspace crates. Toolchain
+and system packages can use Nix caches; project crates compile from source.
 
-The CLI reads local files or stdin. It does not fetch, clone, create worktrees,
-mount repositories, or invoke Nix. The example Nix command can fetch sources.
-Source-input edges are not a selected package's build dependencies.
+```sh
+weavie nix-lib > weavie.nix
+```
 
-The library exposes `Graph::from_json`, `resolve_input`, `select`, and `explain`.
-The [project research and proposed workflow](https://github.com/bboxy450/weavie/blob/main/docs/nix-graph-repo.md)
-cover target provenance and future worktree/build integration.
+Export the helper's package, dev shell, and `graphRepo.targets` metadata from your
+flake. The [setup example](https://github.com/bboxy450/weavie#connect-your-nix-composition)
+and [workspace guide](https://github.com/bboxy450/weavie/blob/main/docs/workspaces.md)
+show the required repository ownership, crate paths, Cargo patch URLs, and locks.
+Both independent application inputs and the composition's own `self` source work.
 
-MIT licensed.
+Live Nix tests build six crates from five repositories. A shared crate edit
+changes both Cargo and sandboxed Nix output from `16` to `70`; a second session
+stays at `16`. Another test preserves tracked dirty `self` edits and builds them
+through both paths. Native builds, lock preservation, and unrelated-repo exclusion
+are checked too.
+
+Offline graph inspection remains available without Nix:
+
+```sh
+weavie graph --from app --json
+weavie why protocol --from app
+weavie --file /path/to/flake.lock graph
+weavie --session /absolute/session graph --json
+```
+
+The CLI currently requires Unix symlinks, a local composition, and Git-backed
+editable inputs. Nix's Git snapshots include files known to Git: add new files
+before building. Sessions keep absolute paths and should stay in place. There is
+no automatic worktree deletion or multi-repository commit/push.
+
+The library also exposes the graph, session, and Nix backend modules. MIT licensed.
