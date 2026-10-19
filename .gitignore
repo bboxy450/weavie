@@ -1,0 +1,5 @@
+/target/
+/.weavie/
+.DS_Store
+result
+result-*

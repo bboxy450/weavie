@@ -1,0 +1,57 @@
+{
+  "version": 7,
+  "root": "composition",
+  "nodes": {
+    "composition": {
+      "inputs": {
+        "app": "app",
+        "gateway": "gateway",
+        "protocol": "protocol",
+        "tool": "tool",
+        "transport": "transport"
+      }
+    },
+    "app": {
+      "inputs": { "transport": ["transport"] },
+      "locked": {
+        "type": "github", "owner": "example", "repo": "app",
+        "rev": "1111111111111111111111111111111111111111"
+      }
+    },
+    "gateway": {
+      "inputs": { "transport": "transport_old" },
+      "locked": {
+        "type": "github", "owner": "example", "repo": "gateway",
+        "rev": "2222222222222222222222222222222222222222"
+      }
+    },
+    "transport": {
+      "inputs": { "protocol": ["protocol"] },
+      "locked": {
+        "type": "github", "owner": "example", "repo": "transport",
+        "rev": "3333333333333333333333333333333333333333"
+      }
+    },
+    "transport_old": {
+      "inputs": { "protocol": ["protocol"] },
+      "locked": {
+        "type": "github", "owner": "example", "repo": "transport",
+        "rev": "4444444444444444444444444444444444444444"
+      }
+    },
+    "protocol": {
+      "flake": false,
+      "locked": {
+        "type": "git", "url": "https://example.invalid/protocol.git",
+        "rev": "5555555555555555555555555555555555555555",
+        "dir": "rust", "submodules": true
+      },
+      "original": { "type": "git", "url": "https://example.invalid/protocol.git" }
+    },
+    "tool": {
+      "locked": {
+        "type": "path", "path": "./tool"
+      }
+    }
+  }
+}
